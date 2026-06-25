@@ -57,11 +57,13 @@ const DAUGHTERS = [
   { id: "daynight", name: "Day & Night Vacuum", rule: "B3678/S34678", color: "#d6c45d" },
   { id: "coral", name: "Coral Vacuum", rule: "B3/S45678", color: "#e27d60" }
 ];
+const DAUGHTER_IDS = new Set(DAUGHTERS.map((mode) => mode.id));
 
 const COLLISION_RULE = parseRule("B3678/S235678");
 const MAX_GENERATION = 6;
 const MAX_ACTIVE_BUBBLES = 96;
 const MAX_VACUA = 240;
+const MAX_SUBSTRATE_NODES = 64;
 const TARGET_STEP_MS = 40;
 const MAX_STEPS_PER_FRAME = 3;
 const UI_UPDATE_MS = 120;
@@ -85,6 +87,8 @@ const els = {
   vacuumReadout: document.querySelector("#vacuumReadout"),
   collisionReadout: document.querySelector("#collisionReadout"),
   generationReadout: document.querySelector("#generationReadout"),
+  nodeReadout: document.querySelector("#nodeReadout"),
+  loopReadout: document.querySelector("#loopReadout"),
   parentRuleReadout: document.querySelector("#parentRuleReadout"),
   childRuleReadout: document.querySelector("#childRuleReadout"),
   toolButtons: Array.from(document.querySelectorAll("[data-tool]"))
@@ -186,6 +190,10 @@ class Universe {
     this.pointerDown = false;
     this.bubbles = [];
     this.vacua = [null];
+    this.substrateNodes = [];
+    this.substrateByKey = new Map();
+    this.rootNodeId = 0;
+    this.loopCount = 0;
     this.liveCount = 0;
     this.convertedCount = 0;
     this.collisionCount = 0;
@@ -193,6 +201,7 @@ class Universe {
     this.needsDraw = true;
     this.random = xorshift32(Date.now() | 0);
     this.resize();
+    this.resetSubstrateGraph();
     this.seed();
   }
 
@@ -280,10 +289,96 @@ class Universe {
     return this.modeColors.get(color);
   }
 
+  substrateKey(mode) {
+    return mode.rule.toUpperCase();
+  }
+
+  createSubstrateNode(mode, parentId = null) {
+    const id = this.substrateNodes.length;
+    const parent = parentId == null ? null : this.substrateNodes[parentId];
+    const node = {
+      id,
+      key: this.substrateKey(mode),
+      mode,
+      rule: parseRule(mode.rule),
+      color: mode.color,
+      parentId,
+      children: [],
+      visits: 1,
+      depth: parent ? parent.depth + 1 : 0
+    };
+    this.substrateNodes.push(node);
+    this.substrateByKey.set(node.key, id);
+    if (parent && !parent.children.includes(id)) {
+      parent.children.push(id);
+    }
+    return id;
+  }
+
+  resolveSubstrateNode(parentId, mode) {
+    const key = this.substrateKey(mode);
+    const existingId = this.substrateByKey.get(key);
+    const parent = parentId == null ? null : this.substrateNodes[parentId];
+
+    if (existingId != null) {
+      const existing = this.substrateNodes[existingId];
+      existing.visits += 1;
+      if (parent && !parent.children.includes(existingId)) {
+        parent.children.push(existingId);
+      }
+      this.loopCount += 1;
+      return existingId;
+    }
+
+    if (this.substrateNodes.length >= MAX_SUBSTRATE_NODES) {
+      const fallback = this.substrateNodes[1 + Math.floor(this.random() * Math.max(1, this.substrateNodes.length - 1))] || this.substrateNodes[0];
+      fallback.visits += 1;
+      if (parent && !parent.children.includes(fallback.id)) {
+        parent.children.push(fallback.id);
+      }
+      this.loopCount += 1;
+      return fallback.id;
+    }
+
+    return this.createSubstrateNode(mode, parentId);
+  }
+
+  resetSubstrateGraph() {
+    this.substrateNodes = [];
+    this.substrateByKey = new Map();
+    this.loopCount = 0;
+    this.rootNodeId = this.createSubstrateNode(this.parentMode);
+  }
+
+  nodeAt(gridX, gridY) {
+    const index = gridY * this.cols + gridX;
+    const vacuum = this.vacua[this.vacuum[index]];
+    return vacuum?.nodeId ?? this.rootNodeId;
+  }
+
+  selectChildMode(parentNodeId, avoidModeId) {
+    const parent = this.substrateNodes[parentNodeId];
+    const childIds = parent?.children.filter((id) => DAUGHTER_IDS.has(this.substrateNodes[id].mode.id)) || [];
+    if (childIds.length && this.random() < 0.64) {
+      const childId = childIds[Math.floor(this.random() * childIds.length)];
+      return this.substrateNodes[childId].mode;
+    }
+
+    if (this.substrateNodes.length > 1 && this.random() < 0.28) {
+      const reusableNodes = this.substrateNodes.filter((node) => DAUGHTER_IDS.has(node.mode.id));
+      if (reusableNodes.length) {
+        return reusableNodes[Math.floor(this.random() * reusableNodes.length)].mode;
+      }
+    }
+
+    return randomDifferentItem(DAUGHTERS, this.random, avoidModeId);
+  }
+
   seed() {
     this.tick = 0;
     this.bubbles = [];
     this.vacua = [null];
+    this.resetSubstrateGraph();
     this.vacuum.fill(0);
     this.wall.fill(0);
     this.frontOwner.fill(0);
@@ -310,6 +405,7 @@ class Universe {
     this.tick = 0;
     this.bubbles = [];
     this.vacua = [null];
+    this.resetSubstrateGraph();
     this.cells.fill(0);
     this.nextCells.fill(0);
     this.ages.fill(0);
@@ -331,7 +427,10 @@ class Universe {
       return null;
     }
 
-    const mode = options.mode || randomDifferentItem(DAUGHTERS, this.random, options.parentModeId || this.childMode.id);
+    const parentNodeId = options.parentNodeId ?? this.rootNodeId;
+    const mode = options.mode || this.selectChildMode(parentNodeId, options.parentModeId || this.childMode.id);
+    const nodeId = options.nodeId ?? this.resolveSubstrateNode(parentNodeId, mode);
+    const substrateNode = this.substrateNodes[nodeId];
     const generation = options.generation || 0;
     const inheritedSpeed = options.parentSpeed || Number(els.wallSpeed.value);
     const inheritedTension = options.parentTension ?? Number(els.wallTension.value);
@@ -347,9 +446,11 @@ class Universe {
       speed,
       tension,
       radiation,
-      color: mode.color,
+      color: substrateNode.color,
       generation,
-      parentVacuumId: options.parentVacuumId || 0
+      parentVacuumId: options.parentVacuumId || 0,
+      parentNodeId,
+      nodeId
     };
     this.vacua.push(vacuum);
     this.maxGeneration = Math.max(this.maxGeneration, generation);
@@ -367,6 +468,8 @@ class Universe {
       radiation,
       generation,
       parentVacuumId: options.parentVacuumId || 0,
+      parentNodeId,
+      nodeId,
       nextSpawn: this.tick + 10 + Math.floor(this.random() * 24)
     };
     this.bubbles.push(bubble);
@@ -379,7 +482,7 @@ class Universe {
       els.wallRadiation.value = radiation.toFixed(2);
       syncRangeOutputs();
       this.childMode = mode;
-      this.childRule = vacuum.rule;
+      this.childRule = substrateNode.rule;
       this.updateRuleReadouts();
     }
 
@@ -387,14 +490,17 @@ class Universe {
   }
 
   addBubble(gridX, gridY) {
+    const parentNodeId = this.nodeAt(gridX, gridY);
     const parentMode = randomDifferentItem(BASELINES, this.random, this.parentMode.id);
     this.parentMode = parentMode;
     this.parentRule = parseRule(parentMode.rule);
+    this.rootNodeId = this.resolveSubstrateNode(this.rootNodeId, parentMode);
     els.baselineMode.value = parentMode.id;
 
     this.spawnBubble(gridX, gridY, {
       generation: 0,
-      mode: randomDifferentItem(DAUGHTERS, this.random, this.childMode.id),
+      parentNodeId,
+      mode: this.selectChildMode(parentNodeId, this.childMode.id),
       updateControls: true
     });
   }
@@ -453,6 +559,7 @@ class Universe {
             y,
             generation: bubble.generation + 1,
             parentVacuumId: bubble.vacuumId,
+            parentNodeId: parentVacuum?.nodeId ?? bubble.nodeId,
             parentModeId: parentVacuum?.mode.id,
             parentSpeed: bubble.speed,
             parentTension: bubble.tension,
@@ -505,6 +612,7 @@ class Universe {
       this.spawnBubble(descendant.x, descendant.y, {
         generation: descendant.generation,
         parentVacuumId: descendant.parentVacuumId,
+        parentNodeId: descendant.parentNodeId,
         parentModeId: descendant.parentModeId,
         parentSpeed: descendant.parentSpeed,
         parentTension: descendant.parentTension,
@@ -670,6 +778,8 @@ class Universe {
     els.vacuumReadout.value = `${Math.round((this.convertedCount / total) * 100)}%`;
     els.collisionReadout.value = String(this.collisionCount);
     els.generationReadout.value = String(this.maxGeneration);
+    els.nodeReadout.value = String(this.substrateNodes.length);
+    els.loopReadout.value = String(this.loopCount);
     this.updateRuleReadouts();
   }
 
@@ -714,6 +824,9 @@ window.falseVacuumGarden = {
       converted: universe.convertedCount,
       collisionCount: universe.collisionCount,
       maxGeneration: universe.maxGeneration,
+      substrateNodes: universe.substrateNodes.length,
+      loopCount: universe.loopCount,
+      rootNodeId: universe.rootNodeId,
       childRule: universe.childRule.label
     };
   }
