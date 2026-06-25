@@ -51,13 +51,19 @@ const BASELINES = [
   }
 ];
 
-const DAUGHTERS = [
-  { id: "observer", name: "Observer Vacuum", rule: "B3/S23", color: "#39b9a7" },
-  { id: "highlife", name: "HighLife Vacuum", rule: "B36/S23", color: "#72c45b" },
-  { id: "daynight", name: "Day & Night Vacuum", rule: "B3678/S34678", color: "#d6c45d" },
-  { id: "coral", name: "Coral Vacuum", rule: "B3/S45678", color: "#e27d60" }
+const RULE_PRESETS = [
+  { id: "life", name: "Conway's Life", rule: "B3/S23", color: "#39b9a7" },
+  { id: "highlife", name: "HighLife", rule: "B36/S23", color: "#72c45b" },
+  { id: "seeds", name: "Seeds", rule: "B2/S", color: "#8c94a3" },
+  { id: "daynight", name: "Day & Night", rule: "B3678/S34678", color: "#d6c45d" },
+  { id: "lifewithoutdeath", name: "Life Without Death", rule: "B3/S012345678", color: "#91c95e" },
+  { id: "morley", name: "Morley", rule: "B368/S245", color: "#e27d60" },
+  { id: "diamoeba", name: "Diamoeba", rule: "B35678/S5678", color: "#d45d4c" },
+  { id: "void", name: "Void", rule: "B/S", color: "#77796f" },
+  { id: "flood", name: "Flood", rule: "B012345678/S012345678", color: "#f3f0e8" },
+  { id: "static", name: "Static", rule: "B/S012345678", color: "#aaa393" },
+  { id: "spark", name: "Spark", rule: "B012345678/S", color: "#f1d06b" }
 ];
-const DAUGHTER_IDS = new Set(DAUGHTERS.map((mode) => mode.id));
 
 const COLLISION_RULE = parseRule("B3678/S235678");
 const MAX_GENERATION = 6;
@@ -75,7 +81,6 @@ const els = {
   randomize: document.querySelector("#randomize"),
   clear: document.querySelector("#clear"),
   baselineMode: document.querySelector("#baselineMode"),
-  daughterMode: document.querySelector("#daughterMode"),
   wallSpeed: document.querySelector("#wallSpeed"),
   wallTension: document.querySelector("#wallTension"),
   wallRadiation: document.querySelector("#wallRadiation"),
@@ -99,13 +104,6 @@ for (const mode of BASELINES) {
   option.value = mode.id;
   option.textContent = mode.name;
   els.baselineMode.append(option);
-}
-
-for (const mode of DAUGHTERS) {
-  const option = document.createElement("option");
-  option.value = mode.id;
-  option.textContent = mode.name;
-  els.daughterMode.append(option);
 }
 
 function parseRule(rule) {
@@ -152,7 +150,90 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function digitsFromMask(mask) {
+  let digits = "";
+  for (let i = 0; i <= 8; i += 1) {
+    if (mask & (1 << i)) digits += String(i);
+  }
+  return digits;
+}
+
+function maskFromDigits(digits) {
+  let mask = 0;
+  for (const digit of digits) {
+    mask |= 1 << Number(digit);
+  }
+  return mask;
+}
+
+function ruleFromMasks(birthMask, surviveMask) {
+  return `B${digitsFromMask(birthMask)}/S${digitsFromMask(surviveMask)}`;
+}
+
+function mutateRule(rule, random, flips = 2) {
+  const parsed = /^B([0-8]*)\/S([0-8]*)$/i.exec(rule);
+  let birthMask = maskFromDigits(parsed?.[1] || "");
+  let surviveMask = maskFromDigits(parsed?.[2] || "");
+  const flipCount = 1 + Math.floor(random() * flips);
+
+  for (let i = 0; i < flipCount; i += 1) {
+    const bit = 1 << Math.floor(random() * 9);
+    if (random() < 0.5) {
+      birthMask ^= bit;
+    } else {
+      surviveMask ^= bit;
+    }
+  }
+
+  return ruleFromMasks(birthMask, surviveMask);
+}
+
+function randomRule(random) {
+  const birthBias = random();
+  const surviveBias = random();
+  let birthMask = 0;
+  let surviveMask = 0;
+
+  for (let i = 0; i <= 8; i += 1) {
+    if (random() < birthBias) birthMask |= 1 << i;
+    if (random() < surviveBias) surviveMask |= 1 << i;
+  }
+
+  return ruleFromMasks(birthMask, surviveMask);
+}
+
+function colorFromRule(rule, random) {
+  let hash = 2166136261;
+  for (let i = 0; i < rule.length; i += 1) {
+    hash ^= rule.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hue = (hash >>> 0) % 360;
+  const saturation = 48 + Math.floor(random() * 34);
+  const lightness = 48 + Math.floor(random() * 22);
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
 function hexToRgb(hex) {
+  if (hex.startsWith("hsl(")) {
+    const match = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(hex);
+    if (match) {
+      const h = Number(match[1]) / 60;
+      const s = Number(match[2]) / 100;
+      const l = Number(match[3]) / 100;
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs((h % 2) - 1));
+      const m = l - c / 2;
+      const [r, g, b] =
+        h < 1 ? [c, x, 0] :
+        h < 2 ? [x, c, 0] :
+        h < 3 ? [0, c, x] :
+        h < 4 ? [0, x, c] :
+        h < 5 ? [x, 0, c] :
+        [c, 0, x];
+      return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+    }
+  }
   const value = Number.parseInt(hex.slice(1), 16);
   return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 }
@@ -178,9 +259,11 @@ class Universe {
     this.pixelData = null;
     this.modeColors = new Map();
     this.parentMode = getMode(BASELINES, els.baselineMode.value);
-    this.childMode = getMode(DAUGHTERS, els.daughterMode.value);
     this.parentRule = parseRule(this.parentMode.rule);
-    this.childRule = parseRule(this.childMode.rule);
+    this.latestRule = null;
+    this.latestRuleLabel = "B/S";
+    this.ruleSeed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    this.ruleRandom = xorshift32(this.ruleSeed);
     this.cellSize = 6;
     this.cols = 0;
     this.rows = 0;
@@ -274,11 +357,9 @@ class Universe {
     this.needsDraw = true;
   }
 
-  setRules(parentMode, childMode) {
+  setRules(parentMode) {
     this.parentMode = parentMode;
-    this.childMode = childMode;
     this.parentRule = parseRule(parentMode.rule);
-    this.childRule = parseRule(childMode.rule);
     this.updateRuleReadouts();
   }
 
@@ -356,22 +437,52 @@ class Universe {
     return vacuum?.nodeId ?? this.rootNodeId;
   }
 
+  generateRuleMode(parentNodeId, avoidModeId) {
+    const parent = this.substrateNodes[parentNodeId] || this.substrateNodes[this.rootNodeId];
+    const roll = this.ruleRandom();
+    let source;
+    let rule;
+
+    if (roll < 0.28) {
+      source = randomDifferentItem(RULE_PRESETS, this.ruleRandom, avoidModeId);
+      rule = source.rule;
+    } else if (roll < 0.58 && parent?.mode) {
+      source = parent.mode;
+      rule = mutateRule(parent.mode.rule, this.ruleRandom, 4);
+    } else if (roll < 0.78 && this.substrateNodes.length > 1) {
+      source = this.substrateNodes[1 + Math.floor(this.ruleRandom() * (this.substrateNodes.length - 1))].mode;
+      rule = mutateRule(source.rule, this.ruleRandom, 3);
+    } else {
+      source = null;
+      rule = randomRule(this.ruleRandom);
+    }
+
+    const sourceName = source?.name || "Wild Rule";
+    const id = `gen-${this.ruleSeed.toString(16)}-${rule.replace(/[^0-8]/g, "")}-${Math.floor(this.ruleRandom() * 0xffff).toString(16)}`;
+    return {
+      id,
+      name: `${sourceName} Drift`,
+      rule,
+      color: colorFromRule(rule, this.ruleRandom)
+    };
+  }
+
   selectChildMode(parentNodeId, avoidModeId) {
     const parent = this.substrateNodes[parentNodeId];
-    const childIds = parent?.children.filter((id) => DAUGHTER_IDS.has(this.substrateNodes[id].mode.id)) || [];
-    if (childIds.length && this.random() < 0.64) {
+    const childIds = parent?.children || [];
+    if (childIds.length && this.random() < 0.42) {
       const childId = childIds[Math.floor(this.random() * childIds.length)];
       return this.substrateNodes[childId].mode;
     }
 
-    if (this.substrateNodes.length > 1 && this.random() < 0.28) {
-      const reusableNodes = this.substrateNodes.filter((node) => DAUGHTER_IDS.has(node.mode.id));
+    if (this.substrateNodes.length > 1 && this.random() < 0.18) {
+      const reusableNodes = this.substrateNodes.filter((node) => node.id !== this.rootNodeId);
       if (reusableNodes.length) {
         return reusableNodes[Math.floor(this.random() * reusableNodes.length)].mode;
       }
     }
 
-    return randomDifferentItem(DAUGHTERS, this.random, avoidModeId);
+    return this.generateRuleMode(parentNodeId, avoidModeId);
   }
 
   seed() {
@@ -386,6 +497,8 @@ class Universe {
     this.convertedCount = 0;
     this.collisionCount = 0;
     this.maxGeneration = 0;
+    this.latestRule = null;
+    this.latestRuleLabel = "B/S";
     for (let i = 0; i < this.cells.length; i += 1) {
       const alive = this.random() < this.parentMode.density ? 1 : 0;
       this.cells[i] = alive;
@@ -418,6 +531,8 @@ class Universe {
     this.convertedCount = 0;
     this.collisionCount = 0;
     this.maxGeneration = 0;
+    this.latestRule = null;
+    this.latestRuleLabel = "B/S";
     this.updateUi();
     this.draw();
   }
@@ -428,7 +543,7 @@ class Universe {
     }
 
     const parentNodeId = options.parentNodeId ?? this.rootNodeId;
-    const mode = options.mode || this.selectChildMode(parentNodeId, options.parentModeId || this.childMode.id);
+    const mode = options.mode || this.selectChildMode(parentNodeId, options.parentModeId);
     const nodeId = options.nodeId ?? this.resolveSubstrateNode(parentNodeId, mode);
     const substrateNode = this.substrateNodes[nodeId];
     const generation = options.generation || 0;
@@ -482,23 +597,16 @@ class Universe {
     this.bubbles.push(bubble);
     this.needsDraw = true;
 
-    if (options.updateControls !== false) {
-      els.daughterMode.value = mode.id;
-      els.wallSpeed.value = speed.toFixed(1);
-      els.wallTension.value = tension.toFixed(2);
-      els.wallRadiation.value = radiation.toFixed(2);
-      syncRangeOutputs();
-      this.childMode = mode;
-      this.childRule = substrateNode.rule;
-      this.updateRuleReadouts();
-    }
+    this.latestRule = substrateNode.rule;
+    this.latestRuleLabel = substrateNode.rule.label;
+    this.updateRuleReadouts();
 
     return bubble;
   }
 
   addBubble(gridX, gridY) {
     const parentNodeId = this.nodeAt(gridX, gridY);
-    const mode = getMode(DAUGHTERS, els.daughterMode.value);
+    const mode = this.generateRuleMode(parentNodeId);
 
     this.spawnBubble(gridX, gridY, {
       generation: 0,
@@ -507,8 +615,7 @@ class Universe {
       speed: Number(els.wallSpeed.value),
       tension: Number(els.wallTension.value),
       radiation: Number(els.wallRadiation.value),
-      exactParameters: true,
-      updateControls: false
+      exactParameters: true
     });
   }
 
@@ -623,8 +730,7 @@ class Universe {
         parentModeId: descendant.parentModeId,
         parentSpeed: descendant.parentSpeed,
         parentTension: descendant.parentTension,
-        parentRadiation: descendant.parentRadiation,
-        updateControls: false
+        parentRadiation: descendant.parentRadiation
       });
     }
 
@@ -792,7 +898,7 @@ class Universe {
 
   updateRuleReadouts() {
     els.parentRuleReadout.value = this.parentRule.label;
-    els.childRuleReadout.value = this.childRule.label;
+    els.childRuleReadout.value = this.latestRuleLabel;
   }
 
   canvasToGrid(event) {
@@ -834,7 +940,7 @@ window.falseVacuumGarden = {
       substrateNodes: universe.substrateNodes.length,
       loopCount: universe.loopCount,
       rootNodeId: universe.rootNodeId,
-      childRule: universe.childRule.label
+      latestRule: universe.latestRuleLabel
     };
   }
 };
@@ -864,12 +970,8 @@ els.clear.addEventListener("click", () => {
 });
 
 els.baselineMode.addEventListener("change", () => {
-  universe.setRules(getMode(BASELINES, els.baselineMode.value), universe.childMode);
+  universe.setRules(getMode(BASELINES, els.baselineMode.value));
   universe.seed();
-});
-
-els.daughterMode.addEventListener("change", () => {
-  universe.setRules(universe.parentMode, getMode(DAUGHTERS, els.daughterMode.value));
 });
 
 for (const input of [els.wallSpeed, els.wallTension, els.wallRadiation]) {
