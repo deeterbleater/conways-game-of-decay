@@ -143,6 +143,27 @@ button.primary {
   background: #12312d;
 }
 
+.warning-panel {
+  display: grid;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid rgba(225, 184, 77, 0.58);
+  border-radius: 6px;
+  background: rgba(225, 184, 77, 0.08);
+}
+
+.warning-panel strong {
+  color: var(--gold);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.warning-panel span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .field,
 .range-field,
 .toggle-field {

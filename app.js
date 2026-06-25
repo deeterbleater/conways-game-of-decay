@@ -81,7 +81,7 @@ const els = {
   randomize: document.querySelector("#randomize"),
   clear: document.querySelector("#clear"),
   baselineMode: document.querySelector("#baselineMode"),
-  finiteDomains: document.querySelector("#finiteDomains"),
+  domainMode: document.querySelector("#domainMode"),
   simSpeed: document.querySelector("#simSpeed"),
   naturalBubbles: document.querySelector("#naturalBubbles"),
   wallSpeed: document.querySelector("#wallSpeed"),
@@ -683,6 +683,28 @@ class Universe {
     this.addBubble(x, y);
   }
 
+  frontRepulsionFor(bubble) {
+    let pressure = 0;
+    let pushX = 0;
+    let pushY = 0;
+
+    for (const other of this.bubbles) {
+      if (other === bubble) continue;
+      const dx = bubble.x - other.x;
+      const dy = bubble.y - other.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const gap = distance - bubble.radius - other.radius;
+      if (gap > 26) continue;
+
+      const influence = clamp((26 - gap) / 52, 0, 1);
+      pressure = Math.max(pressure, influence);
+      pushX += (dx / distance) * influence;
+      pushY += (dy / distance) * influence;
+    }
+
+    return { pressure, pushX, pushY };
+  }
+
   paint(gridX, gridY, value) {
     const brush = 2;
     for (let oy = -brush; oy <= brush; oy += 1) {
@@ -707,7 +729,9 @@ class Universe {
     }
     const farEdge = Math.hypot(this.cols, this.rows) + 18;
     const descendants = [];
-    const finiteDomains = els.finiteDomains.checked;
+    const domainMode = els.domainMode.value;
+    const finiteDomains = domainMode === "finite";
+    const interactingFronts = domainMode === "interacting";
 
     for (const bubble of this.bubbles) {
       const speed = bubble.speed;
@@ -716,10 +740,17 @@ class Universe {
       const frontWidth = Math.max(1.4, speed + 1.4);
       const domainLimit = finiteDomains ? bubble.maxRadius : farEdge;
       const remainingRadius = domainLimit - bubble.radius;
+      const repulsion = interactingFronts ? this.frontRepulsionFor(bubble) : null;
+      const speedScale = repulsion ? clamp(1 - repulsion.pressure * 0.74, 0.14, 1) : 1;
       const wallSpeed = finiteDomains
         ? clamp(speed * clamp(remainingRadius / 14, 0.12, 1), 0, speed)
-        : speed;
+        : speed * speedScale;
       bubble.radius += wallSpeed;
+      if (repulsion && repulsion.pressure > 0.02) {
+        const drift = speed * repulsion.pressure * 0.16;
+        bubble.x = clamp(bubble.x + repulsion.pushX * drift, 0, this.cols - 1);
+        bubble.y = clamp(bubble.y + repulsion.pushY * drift, 0, this.rows - 1);
+      }
       bubble.phase += 0.045 + speed * 0.012;
       const maxReach = bubble.radius + wrinkle + 2;
       const maxReachSq = maxReach * maxReach;
@@ -815,7 +846,7 @@ class Universe {
     }
 
     this.bubbles = this.bubbles.filter((bubble) => {
-      const limit = els.finiteDomains.checked ? bubble.maxRadius : farEdge;
+      const limit = els.domainMode.value === "finite" ? bubble.maxRadius : farEdge;
       return bubble.radius < limit - 0.35;
     });
   }
@@ -1077,7 +1108,7 @@ window.falseVacuumGarden = {
       collisionCount: universe.collisionCount,
       maxGeneration: universe.maxGeneration,
       activeBubbles: universe.bubbles.length,
-      finiteDomains: els.finiteDomains.checked,
+      domainMode: els.domainMode.value,
       simSpeed: Number(els.simSpeed.value),
       naturalBubbles: Number(els.naturalBubbles.value),
       substrateNodes: universe.substrateNodes.length,

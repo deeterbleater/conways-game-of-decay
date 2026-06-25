@@ -28,6 +28,11 @@
           <button id="clear" type="button">Clear</button>
         </div>
 
+        <div class="warning-panel" role="note">
+          <strong>Photosensitivity warning</strong>
+          <span>This simulation can produce flashing patterns, high contrast motion, and rapid color changes.</span>
+        </div>
+
         <label class="field">
           <span>Ancestral vacuum</span>
           <select id="baselineMode"></select>
@@ -39,9 +44,13 @@
           <button type="button" data-tool="erase">Erase</button>
         </div>
 
-        <label class="toggle-field">
-          <span>Finite domains</span>
-          <input id="finiteDomains" type="checkbox" checked>
+        <label class="field">
+          <span>Domain behavior</span>
+          <select id="domainMode">
+            <option value="finite" selected>Finite domains</option>
+            <option value="infinite">Infinite expansion</option>
+            <option value="interacting">Interacting fronts</option>
+          </select>
         </label>
 
         <label class="range-field">
@@ -119,6 +128,6 @@
       </aside>
     </main>
 
-    <script src="./app.js?v=controls-1"></script>
+    <script src="./app.js?v=interaction-1"></script>
   </body>
 </html>
