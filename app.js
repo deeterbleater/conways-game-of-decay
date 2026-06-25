@@ -96,6 +96,8 @@ const els = {
   loopReadout: document.querySelector("#loopReadout"),
   parentRuleReadout: document.querySelector("#parentRuleReadout"),
   childRuleReadout: document.querySelector("#childRuleReadout"),
+  ruleLineage: document.querySelector("#ruleLineage"),
+  lineageCount: document.querySelector("#lineageCount"),
   toolButtons: Array.from(document.querySelectorAll("[data-tool]"))
 };
 
@@ -262,6 +264,7 @@ class Universe {
     this.parentRule = parseRule(this.parentMode.rule);
     this.latestRule = null;
     this.latestRuleLabel = "B/S";
+    this.lineageSignature = "";
     this.ruleSeed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     this.ruleRandom = xorshift32(this.ruleSeed);
     this.cellSize = 6;
@@ -437,6 +440,10 @@ class Universe {
     return vacuum?.nodeId ?? this.rootNodeId;
   }
 
+  vacuumIdAt(gridX, gridY) {
+    return this.vacuum[gridY * this.cols + gridX] || 0;
+  }
+
   generateRuleMode(parentNodeId, avoidModeId) {
     const parent = this.substrateNodes[parentNodeId] || this.substrateNodes[this.rootNodeId];
     const roll = this.ruleRandom();
@@ -600,16 +607,21 @@ class Universe {
     this.latestRule = substrateNode.rule;
     this.latestRuleLabel = substrateNode.rule.label;
     this.updateRuleReadouts();
+    els.lineageCount.value = `${this.substrateNodes.length} ${this.substrateNodes.length === 1 ? "rule" : "rules"}`;
+    this.updateRuleLineage();
 
     return bubble;
   }
 
   addBubble(gridX, gridY) {
-    const parentNodeId = this.nodeAt(gridX, gridY);
+    const parentVacuumId = this.vacuumIdAt(gridX, gridY);
+    const parentVacuum = this.vacua[parentVacuumId];
+    const parentNodeId = parentVacuum?.nodeId ?? this.rootNodeId;
     const mode = this.generateRuleMode(parentNodeId);
 
     this.spawnBubble(gridX, gridY, {
       generation: 0,
+      parentVacuumId,
       parentNodeId,
       mode,
       speed: Number(els.wallSpeed.value),
@@ -704,9 +716,10 @@ class Universe {
           const index = y * this.cols + x;
 
           if (dist <= front) {
-            if (this.vacuum[index] === 0) {
+            const currentVacuumId = this.vacuum[index];
+            if (currentVacuumId === bubble.parentVacuumId) {
               this.vacuum[index] = bubble.vacuumId;
-            } else if (this.vacuum[index] !== bubble.vacuumId && Math.abs(dist - front) <= frontWidth * 2) {
+            } else if (currentVacuumId !== bubble.vacuumId && Math.abs(dist - front) <= frontWidth * 2) {
               this.collision[index] = Math.max(this.collision[index], 10);
             }
           }
@@ -893,12 +906,68 @@ class Universe {
     els.generationReadout.value = String(this.maxGeneration);
     els.nodeReadout.value = String(this.substrateNodes.length);
     els.loopReadout.value = String(this.loopCount);
+    els.lineageCount.value = `${this.substrateNodes.length} ${this.substrateNodes.length === 1 ? "rule" : "rules"}`;
     this.updateRuleReadouts();
+    this.updateRuleLineage();
   }
 
   updateRuleReadouts() {
     els.parentRuleReadout.value = this.parentRule.label;
     els.childRuleReadout.value = this.latestRuleLabel;
+  }
+
+  updateRuleLineage() {
+    const signature = this.substrateNodes
+      .map((node) => `${node.id}:${node.parentId ?? "root"}:${node.rule.label}:${node.visits}:${node.children.join(".")}`)
+      .join("|");
+    if (signature === this.lineageSignature) return;
+    this.lineageSignature = signature;
+
+    const fragment = document.createDocumentFragment();
+    const maxVisibleNodes = 48;
+    const visibleNodes =
+      this.substrateNodes.length > maxVisibleNodes
+        ? [this.substrateNodes[0], ...this.substrateNodes.slice(-(maxVisibleNodes - 1))]
+        : this.substrateNodes;
+
+    if (this.substrateNodes.length > visibleNodes.length) {
+      const omitted = document.createElement("div");
+      omitted.className = "lineage-omitted";
+      omitted.textContent = `${this.substrateNodes.length - visibleNodes.length} earlier rules`;
+      fragment.append(this.createRuleLineageRow(visibleNodes[0]), omitted);
+      visibleNodes.shift();
+    }
+
+    for (const node of visibleNodes) {
+      fragment.append(this.createRuleLineageRow(node));
+    }
+
+    els.ruleLineage.replaceChildren(fragment);
+  }
+
+  createRuleLineageRow(node) {
+    const row = document.createElement("div");
+    row.className = "lineage-node";
+    row.style.setProperty("--depth", String(Math.min(node.depth, 8)));
+
+    const swatch = document.createElement("span");
+    swatch.className = "lineage-swatch";
+    swatch.style.backgroundColor = node.color;
+
+    const label = document.createElement("span");
+    label.className = "lineage-label";
+    label.textContent = node.id === this.rootNodeId ? "root" : `#${node.id}`;
+
+    const rule = document.createElement("output");
+    rule.className = "lineage-rule";
+    rule.value = node.rule.label;
+
+    const visits = document.createElement("span");
+    visits.className = "lineage-visits";
+    visits.textContent = node.visits > 1 ? `x${node.visits}` : "";
+
+    row.append(swatch, label, rule, visits);
+    return row;
   }
 
   canvasToGrid(event) {
@@ -940,7 +1009,14 @@ window.falseVacuumGarden = {
       substrateNodes: universe.substrateNodes.length,
       loopCount: universe.loopCount,
       rootNodeId: universe.rootNodeId,
-      latestRule: universe.latestRuleLabel
+      latestRule: universe.latestRuleLabel,
+      rules: universe.substrateNodes.map((node) => ({
+        id: node.id,
+        parentId: node.parentId,
+        rule: node.rule.label,
+        visits: node.visits,
+        depth: node.depth
+      }))
     };
   }
 };

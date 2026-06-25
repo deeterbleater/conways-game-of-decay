@@ -235,6 +235,92 @@ select {
   white-space: nowrap;
 }
 
+.lineage-panel {
+  display: grid;
+  gap: 8px;
+  min-height: 132px;
+  max-height: 216px;
+  min-width: 0;
+}
+
+.lineage-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lineage-panel span,
+.lineage-panel output {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+.lineage-panel output {
+  font-variant-numeric: tabular-nums;
+}
+
+.rule-lineage {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+}
+
+.lineage-node {
+  display: grid;
+  grid-template-columns: 10px 42px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  padding-left: calc(var(--depth) * 9px);
+}
+
+.lineage-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(243, 240, 232, 0.32);
+  border-radius: 50%;
+}
+
+.lineage-node .lineage-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-rule {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineage-node .lineage-visits,
+.lineage-omitted {
+  color: var(--gold);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.lineage-omitted {
+  padding: 2px 0 5px;
+  text-align: left;
+}
+
 @media (max-width: 860px) {
   html,
   body {
