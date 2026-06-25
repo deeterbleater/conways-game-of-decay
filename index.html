@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>False Vacuum Garden</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="sim-pane" aria-label="Cellular vacuum simulation">
+        <canvas id="universe"></canvas>
+      </section>
+
+      <aside class="control-pane" aria-label="Simulation controls">
+        <header class="brand">
+          <div>
+            <p class="eyebrow">cellular cosmology</p>
+            <h1>False Vacuum Garden</h1>
+          </div>
+          <output id="tickReadout" class="tick-readout">t=0</output>
+        </header>
+
+        <div class="control-row">
+          <button id="playPause" type="button" class="primary">Pause</button>
+          <button id="step" type="button">Step</button>
+          <button id="randomize" type="button">Seed</button>
+          <button id="clear" type="button">Clear</button>
+        </div>
+
+        <label class="field">
+          <span>Ancestral vacuum</span>
+          <select id="baselineMode"></select>
+        </label>
+
+        <label class="field">
+          <span>Daughter vacuum</span>
+          <select id="daughterMode"></select>
+        </label>
+
+        <div class="segmented" role="group" aria-label="Pointer mode">
+          <button type="button" class="active" data-tool="nucleate">Nucleate</button>
+          <button type="button" data-tool="draw">Draw</button>
+          <button type="button" data-tool="erase">Erase</button>
+        </div>
+
+        <label class="range-field">
+          <span>Wall speed</span>
+          <input id="wallSpeed" type="range" min="0.2" max="2.8" value="0.9" step="0.1">
+          <output id="wallSpeedValue">0.9</output>
+        </label>
+
+        <label class="range-field">
+          <span>Wall tension</span>
+          <input id="wallTension" type="range" min="0" max="1" value="0.35" step="0.05">
+          <output id="wallTensionValue">0.35</output>
+        </label>
+
+        <label class="range-field">
+          <span>Wall radiation</span>
+          <input id="wallRadiation" type="range" min="0" max="1" value="0.16" step="0.02">
+          <output id="wallRadiationValue">0.16</output>
+        </label>
+
+        <div class="metrics" aria-label="Universe metrics">
+          <div>
+            <span>Living cells</span>
+            <output id="liveReadout">0</output>
+          </div>
+          <div>
+            <span>Daughter share</span>
+            <output id="vacuumReadout">0%</output>
+          </div>
+          <div>
+            <span>Wave collisions</span>
+            <output id="collisionReadout">0</output>
+          </div>
+          <div>
+            <span>Generations</span>
+            <output id="generationReadout">0</output>
+          </div>
+          <div>
+            <span>Rule outside</span>
+            <output id="parentRuleReadout">B/S</output>
+          </div>
+          <div>
+            <span>Rule inside</span>
+            <output id="childRuleReadout">B/S</output>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="./app.js?v=recursive-1"></script>
+  </body>
+</html>
