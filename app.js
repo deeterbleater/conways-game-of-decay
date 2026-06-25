@@ -80,6 +80,7 @@ const els = {
   step: document.querySelector("#step"),
   randomize: document.querySelector("#randomize"),
   clear: document.querySelector("#clear"),
+  fullscreen: document.querySelector("#fullscreen"),
   baselineMode: document.querySelector("#baselineMode"),
   domainMode: document.querySelector("#domainMode"),
   simSpeed: document.querySelector("#simSpeed"),
@@ -1139,6 +1140,38 @@ function setPlaying(nextPlaying) {
   els.playPause.textContent = nextPlaying ? "Pause" : "Play";
 }
 
+function syncFullscreenButton() {
+  const shell = document.querySelector(".app-shell");
+  const active = document.fullscreenElement || shell.classList.contains("fullscreen-fallback");
+  els.fullscreen.textContent = active ? "Exit full" : "Fullscreen";
+}
+
+async function toggleFullscreen() {
+  const shell = document.querySelector(".app-shell");
+
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+    return;
+  }
+  if (shell.classList.contains("fullscreen-fallback")) {
+    shell.classList.remove("fullscreen-fallback");
+    syncFullscreenButton();
+    universe.resize();
+    universe.draw();
+    return;
+  }
+
+  if (document.fullscreenEnabled) {
+    await shell.requestFullscreen();
+    if (document.fullscreenElement) return;
+  }
+
+  shell.classList.add("fullscreen-fallback");
+  syncFullscreenButton();
+  universe.resize();
+  universe.draw();
+}
+
 els.playPause.addEventListener("click", () => setPlaying(!universe.playing));
 els.step.addEventListener("click", () => {
   setPlaying(false);
@@ -1151,6 +1184,18 @@ els.clear.addEventListener("click", () => {
   setPlaying(false);
   universe.clear();
 });
+els.fullscreen.addEventListener("click", () => {
+  toggleFullscreen().catch(() => {
+    syncFullscreenButton();
+  });
+});
+document.addEventListener("fullscreenchange", () => {
+  document.querySelector(".app-shell").classList.remove("fullscreen-fallback");
+  syncFullscreenButton();
+  universe.resize();
+  universe.draw();
+});
+syncFullscreenButton();
 
 els.baselineMode.addEventListener("change", () => {
   universe.setRules(getMode(BASELINES, els.baselineMode.value));

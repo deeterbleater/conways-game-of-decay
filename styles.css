@@ -107,8 +107,19 @@ h1 {
 
 .control-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
   gap: 8px;
+}
+
+.app-shell:fullscreen {
+  background: #10110e;
+}
+
+.app-shell.fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #10110e;
 }
 
 button,
