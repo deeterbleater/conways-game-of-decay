@@ -66,8 +66,8 @@ const RULE_PRESETS = [
 ];
 
 const COLLISION_RULE = parseRule("B3678/S235678");
-const MAX_GENERATION = 6;
-const MAX_ACTIVE_BUBBLES = 96;
+const MAX_GENERATION = 7;
+const MAX_ACTIVE_BUBBLES = 72;
 const MAX_VACUA = 240;
 const MAX_SUBSTRATE_NODES = 64;
 const TARGET_STEP_MS = 40;
@@ -150,6 +150,25 @@ function xorshift32(seed) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function nextSpawnTick(tick, generation, random) {
+  return tick + 24 + generation * 18 + Math.floor(random() * (54 + generation * 18));
+}
+
+function spawnBudgetFor(generation, radiation, tension, random) {
+  const energy = radiation * 1.2 + (1 - tension) * 0.6 + random() * 0.7;
+
+  if (generation === 0) {
+    return clamp(Math.floor(1.6 + energy), 1, 3);
+  }
+  if (generation === 1) {
+    return energy > 0.75 ? 1 : 0;
+  }
+  if (generation === 2) {
+    return energy > 1.05 ? 1 : 0;
+  }
+  return energy > 1.38 ? 1 : 0;
 }
 
 function digitsFromMask(mask) {
@@ -464,6 +483,10 @@ class Universe {
       rule = randomRule(this.ruleRandom);
     }
 
+    if (parent?.rule && rule.toUpperCase() === parent.rule.label) {
+      rule = mutateRule(rule, this.ruleRandom, 2);
+    }
+
     const sourceName = source?.name || "Wild Rule";
     const id = `gen-${this.ruleSeed.toString(16)}-${rule.replace(/[^0-8]/g, "")}-${Math.floor(this.ruleRandom() * 0xffff).toString(16)}`;
     return {
@@ -560,13 +583,13 @@ class Universe {
     const exactParameters = options.exactParameters === true;
     const speed = exactParameters
       ? clamp(options.speed ?? inheritedSpeed, 0.35, 2.9)
-      : clamp((options.speed ?? inheritedSpeed) * (0.72 + this.random() * 0.72), 0.35, 2.9);
+      : clamp((options.speed ?? inheritedSpeed) * (0.62 + this.random() * 0.48), 0.28, 2.5);
     const tension = exactParameters
       ? clamp(options.tension ?? inheritedTension, 0, 1)
-      : clamp((options.tension ?? inheritedTension) + (this.random() - 0.5) * 0.52, 0, 1);
+      : clamp((options.tension ?? inheritedTension) + generation * 0.035 + (this.random() - 0.5) * 0.38, 0, 1);
     const radiation = exactParameters
       ? clamp(options.radiation ?? inheritedRadiation, 0.02, 0.92)
-      : clamp((options.radiation ?? inheritedRadiation) + (this.random() - 0.5) * 0.34, 0.02, 0.92);
+      : clamp((options.radiation ?? inheritedRadiation) * (0.62 + this.random() * 0.34) - generation * 0.025 + (this.random() - 0.5) * 0.14, 0.02, 0.86);
     const vacuumId = this.vacua.length;
     const vacuum = {
       id: vacuumId,
@@ -599,7 +622,9 @@ class Universe {
       parentVacuumId: options.parentVacuumId || 0,
       parentNodeId,
       nodeId,
-      nextSpawn: this.tick + 10 + Math.floor(this.random() * 24)
+      spawnBudget: options.spawnBudget ?? spawnBudgetFor(generation, radiation, tension, this.random),
+      spawnCount: 0,
+      nextSpawn: nextSpawnTick(this.tick, generation, this.random)
     };
     this.bubbles.push(bubble);
     this.needsDraw = true;
@@ -668,12 +693,14 @@ class Universe {
 
       if (
         bubble.generation < MAX_GENERATION &&
+        bubble.spawnCount < bubble.spawnBudget &&
         bubble.radius > 9 &&
         this.tick >= bubble.nextSpawn &&
         this.bubbles.length + descendants.length < MAX_ACTIVE_BUBBLES &&
         this.vacua.length + descendants.length < MAX_VACUA
       ) {
-        const spawnChance = 0.24 + bubble.radiation * 0.18 + (1 - bubble.tension) * 0.08;
+        const generationDamp = Math.pow(0.58, bubble.generation);
+        const spawnChance = (0.045 + bubble.radiation * 0.1 + (1 - bubble.tension) * 0.045) * generationDamp;
         if (this.random() < spawnChance) {
           const angle = this.random() * Math.PI * 2;
           const distance = bubble.radius * (0.48 + this.random() * 0.48);
@@ -691,8 +718,9 @@ class Universe {
             parentTension: bubble.tension,
             parentRadiation: bubble.radiation
           });
+          bubble.spawnCount += 1;
         }
-        bubble.nextSpawn = this.tick + 16 + Math.floor(this.random() * 34);
+        bubble.nextSpawn = nextSpawnTick(this.tick, bubble.generation, this.random);
       }
 
       const minX = Math.max(0, Math.floor(bubble.x - bubble.radius - wrinkle - 3));
