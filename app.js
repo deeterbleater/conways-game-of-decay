@@ -82,9 +82,13 @@ const els = {
   clear: document.querySelector("#clear"),
   baselineMode: document.querySelector("#baselineMode"),
   finiteDomains: document.querySelector("#finiteDomains"),
+  simSpeed: document.querySelector("#simSpeed"),
+  naturalBubbles: document.querySelector("#naturalBubbles"),
   wallSpeed: document.querySelector("#wallSpeed"),
   wallTension: document.querySelector("#wallTension"),
   wallRadiation: document.querySelector("#wallRadiation"),
+  simSpeedValue: document.querySelector("#simSpeedValue"),
+  naturalBubblesValue: document.querySelector("#naturalBubblesValue"),
   wallSpeedValue: document.querySelector("#wallSpeedValue"),
   wallTensionValue: document.querySelector("#wallTensionValue"),
   wallRadiationValue: document.querySelector("#wallRadiationValue"),
@@ -665,6 +669,20 @@ class Universe {
     });
   }
 
+  maybeSpawnNaturalBubble() {
+    const bubblesPerMinute = Number(els.naturalBubbles.value);
+    if (bubblesPerMinute <= 0 || this.bubbles.length >= MAX_ACTIVE_BUBBLES || this.vacua.length >= MAX_VACUA) {
+      return;
+    }
+
+    const chancePerStep = bubblesPerMinute / (60_000 / TARGET_STEP_MS);
+    if (this.random() >= chancePerStep) return;
+
+    const x = Math.floor(this.random() * this.cols);
+    const y = Math.floor(this.random() * this.rows);
+    this.addBubble(x, y);
+  }
+
   paint(gridX, gridY, value) {
     const brush = 2;
     for (let oy = -brush; oy <= brush; oy += 1) {
@@ -1060,6 +1078,8 @@ window.falseVacuumGarden = {
       maxGeneration: universe.maxGeneration,
       activeBubbles: universe.bubbles.length,
       finiteDomains: els.finiteDomains.checked,
+      simSpeed: Number(els.simSpeed.value),
+      naturalBubbles: Number(els.naturalBubbles.value),
       substrateNodes: universe.substrateNodes.length,
       loopCount: universe.loopCount,
       rootNodeId: universe.rootNodeId,
@@ -1076,6 +1096,8 @@ window.falseVacuumGarden = {
 };
 
 function syncRangeOutputs() {
+  els.simSpeedValue.value = `${Number(els.simSpeed.value).toFixed(2)}x`;
+  els.naturalBubblesValue.value = `${Number(els.naturalBubbles.value)}/min`;
   els.wallSpeedValue.value = Number(els.wallSpeed.value).toFixed(1);
   els.wallTensionValue.value = Number(els.wallTension.value).toFixed(2);
   els.wallRadiationValue.value = Number(els.wallRadiation.value).toFixed(2);
@@ -1104,7 +1126,7 @@ els.baselineMode.addEventListener("change", () => {
   universe.seed();
 });
 
-for (const input of [els.wallSpeed, els.wallTension, els.wallRadiation]) {
+for (const input of [els.simSpeed, els.naturalBubbles, els.wallSpeed, els.wallTension, els.wallRadiation]) {
   input.addEventListener("input", syncRangeOutputs);
 }
 syncRangeOutputs();
@@ -1169,15 +1191,17 @@ function frame(now) {
   let stepped = false;
 
   if (universe.playing) {
+    const stepMs = TARGET_STEP_MS / Number(els.simSpeed.value);
     let steps = 0;
-    while (accumulator >= TARGET_STEP_MS && steps < MAX_STEPS_PER_FRAME) {
+    while (accumulator >= stepMs && steps < MAX_STEPS_PER_FRAME) {
       universe.step();
-      accumulator -= TARGET_STEP_MS;
+      universe.maybeSpawnNaturalBubble();
+      accumulator -= stepMs;
       steps += 1;
       stepped = true;
     }
-    if (steps === MAX_STEPS_PER_FRAME && accumulator >= TARGET_STEP_MS) {
-      accumulator = TARGET_STEP_MS;
+    if (steps === MAX_STEPS_PER_FRAME && accumulator >= stepMs) {
+      accumulator = stepMs;
     }
   } else {
     accumulator = 0;
