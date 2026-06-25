@@ -62,6 +62,9 @@ const COLLISION_RULE = parseRule("B3678/S235678");
 const MAX_GENERATION = 6;
 const MAX_ACTIVE_BUBBLES = 96;
 const MAX_VACUA = 240;
+const TARGET_STEP_MS = 40;
+const MAX_STEPS_PER_FRAME = 3;
+const UI_UPDATE_MS = 120;
 
 const els = {
   canvas: document.querySelector("#universe"),
@@ -145,10 +148,31 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function hexToRgb(hex) {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+const COLORS = {
+  background: hexToRgb("#080907"),
+  youngFalse: hexToRgb("#f3f0e8"),
+  youngTrue: hexToRgb("#f1d06b"),
+  youngCollision: hexToRgb("#fff0b0"),
+  oldCollision: hexToRgb("#ff8c5a"),
+  hotCollision: hexToRgb("#f27050"),
+  coolCollision: hexToRgb("#e1b84d"),
+  wallGold: hexToRgb("#e1b84d")
+};
+
 class Universe {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d", { alpha: false });
+    this.ctx.imageSmoothingEnabled = false;
+    this.bufferCanvas = document.createElement("canvas");
+    this.bufferCtx = this.bufferCanvas.getContext("2d", { alpha: false });
+    this.pixelData = null;
+    this.modeColors = new Map();
     this.parentMode = getMode(BASELINES, els.baselineMode.value);
     this.childMode = getMode(DAUGHTERS, els.daughterMode.value);
     this.parentRule = parseRule(this.parentMode.rule);
@@ -166,6 +190,7 @@ class Universe {
     this.convertedCount = 0;
     this.collisionCount = 0;
     this.maxGeneration = 0;
+    this.needsDraw = true;
     this.random = xorshift32(Date.now() | 0);
     this.resize();
     this.seed();
@@ -183,9 +208,11 @@ class Universe {
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
     this.cellSize = nextCellSize;
     this.viewWidth = rect.width;
     this.viewHeight = rect.height;
+    this.needsDraw = true;
 
     if (nextCols === this.cols && nextRows === this.rows) {
       return;
@@ -209,6 +236,9 @@ class Universe {
     this.wall = new Uint8Array(total);
     this.frontOwner = new Uint8Array(total);
     this.collision = new Uint8Array(total);
+    this.bufferCanvas.width = this.cols;
+    this.bufferCanvas.height = this.rows;
+    this.pixelData = this.bufferCtx.createImageData(this.cols, this.rows);
 
     if (!oldCells) {
       return;
@@ -232,6 +262,7 @@ class Universe {
       }
     }
     this.recount();
+    this.needsDraw = true;
   }
 
   setRules(parentMode, childMode) {
@@ -240,6 +271,13 @@ class Universe {
     this.parentRule = parseRule(parentMode.rule);
     this.childRule = parseRule(childMode.rule);
     this.updateRuleReadouts();
+  }
+
+  getColor(color) {
+    if (!this.modeColors.has(color)) {
+      this.modeColors.set(color, hexToRgb(color));
+    }
+    return this.modeColors.get(color);
   }
 
   seed() {
@@ -332,6 +370,7 @@ class Universe {
       nextSpawn: this.tick + 10 + Math.floor(this.random() * 24)
     };
     this.bubbles.push(bubble);
+    this.needsDraw = true;
 
     if (options.updateControls !== false) {
       els.daughterMode.value = mode.id;
@@ -373,6 +412,7 @@ class Universe {
         this.ages[index] = value ? 1 : 0;
       }
     }
+    this.needsDraw = true;
   }
 
   expandBubbles() {
@@ -391,6 +431,8 @@ class Universe {
       const frontWidth = Math.max(1.4, speed + 1.4);
       bubble.radius += speed;
       bubble.phase += 0.045 + speed * 0.012;
+      const maxReach = bubble.radius + wrinkle + 2;
+      const maxReachSq = maxReach * maxReach;
 
       if (
         bubble.generation < MAX_GENERATION &&
@@ -429,8 +471,9 @@ class Universe {
         for (let x = minX; x <= maxX; x += 1) {
           const dx = x - bubble.x;
           const dy = y - bubble.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > bubble.radius + wrinkle + 2) continue;
+          const distSq = dx * dx + dy * dy;
+          if (distSq > maxReachSq) continue;
+          const dist = Math.sqrt(distSq);
 
           const angle = Math.atan2(dy, dx);
           const localWrinkle =
@@ -473,36 +516,35 @@ class Universe {
     this.bubbles = this.bubbles.filter((bubble) => bubble.radius < farEdge);
   }
 
-  countNeighbors(x, y) {
-    let count = 0;
+  step(countTick = true) {
+    this.expandBubbles();
     const cols = this.cols;
     const rows = this.rows;
     const cells = this.cells;
-
-    for (let oy = -1; oy <= 1; oy += 1) {
-      const yy = y + oy;
-      if (yy < 0 || yy >= rows) continue;
-      for (let ox = -1; ox <= 1; ox += 1) {
-        if (ox === 0 && oy === 0) continue;
-        const xx = x + ox;
-        if (xx < 0 || xx >= cols) continue;
-        count += cells[yy * cols + xx];
-      }
-    }
-    return count;
-  }
-
-  step(countTick = true) {
-    this.expandBubbles();
     let live = 0;
     let converted = 0;
     let collisions = 0;
 
-    for (let y = 0; y < this.rows; y += 1) {
-      for (let x = 0; x < this.cols; x += 1) {
-        const index = y * this.cols + x;
-        const neighbors = this.countNeighbors(x, y);
-        const alive = this.cells[index] === 1;
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < cols; x += 1) {
+        const index = y * cols + x;
+        let neighbors = 0;
+        if (y > 0) {
+          const north = index - cols;
+          if (x > 0) neighbors += cells[north - 1];
+          neighbors += cells[north];
+          if (x + 1 < cols) neighbors += cells[north + 1];
+        }
+        if (x > 0) neighbors += cells[index - 1];
+        if (x + 1 < cols) neighbors += cells[index + 1];
+        if (y + 1 < rows) {
+          const south = index + cols;
+          if (x > 0) neighbors += cells[south - 1];
+          neighbors += cells[south];
+          if (x + 1 < cols) neighbors += cells[south + 1];
+        }
+
+        const alive = cells[index] === 1;
         const vacuum = this.vacua[this.vacuum[index]];
         if (this.collision[index]) collisions += 1;
         const rule = this.collision[index] ? COLLISION_RULE : vacuum?.rule || this.parentRule;
@@ -539,6 +581,7 @@ class Universe {
     this.liveCount = live;
     this.convertedCount = converted;
     this.collisionCount = collisions;
+    this.needsDraw = true;
   }
 
   recount() {
@@ -556,49 +599,68 @@ class Universe {
   }
 
   draw() {
-    const ctx = this.ctx;
-    const s = this.cellSize;
-    ctx.fillStyle = "#080907";
-    ctx.fillRect(0, 0, this.viewWidth, this.viewHeight);
+    const data = this.pixelData.data;
+    const background = COLORS.background;
 
-    for (let y = 0; y < this.rows; y += 1) {
-      for (let x = 0; x < this.cols; x += 1) {
-        const index = y * this.cols + x;
-        const px = x * s;
-        const py = y * s;
-        const vacuum = this.vacua[this.vacuum[index]];
-        const frontVacuum = this.vacua[this.frontOwner[index]];
+    for (let index = 0, offset = 0; index < this.cells.length; index += 1, offset += 4) {
+      const vacuum = this.vacua[this.vacuum[index]];
+      const frontVacuum = this.vacua[this.frontOwner[index]];
+      let r = background[0];
+      let g = background[1];
+      let b = background[2];
 
-        if (vacuum) {
-          ctx.globalAlpha = 0.09;
-          ctx.fillStyle = vacuum.color;
-          ctx.fillRect(px, py, s, s);
-          ctx.globalAlpha = 1;
-        }
+      if (vacuum) {
+        const color = this.getColor(vacuum.color);
+        r = r * 0.9 + color[0] * 0.1;
+        g = g * 0.9 + color[1] * 0.1;
+        b = b * 0.9 + color[2] * 0.1;
+      }
+      if (this.collision[index]) {
+        const color = this.collision[index] > 6 ? COLORS.hotCollision : COLORS.coolCollision;
+        const alpha = this.collision[index] > 6 ? 0.72 : 0.42;
+        const inverse = 1 - alpha;
+        r = r * inverse + color[0] * alpha;
+        g = g * inverse + color[1] * alpha;
+        b = b * inverse + color[2] * alpha;
+      } else if (this.wall[index]) {
+        const frontColor = frontVacuum ? this.getColor(frontVacuum.color) : COLORS.wallGold;
+        r = r * 0.66 + frontColor[0] * 0.34;
+        g = g * 0.66 + frontColor[1] * 0.34;
+        b = b * 0.66 + frontColor[2] * 0.34;
+        r = r * 0.68 + COLORS.wallGold[0] * 0.32;
+        g = g * 0.68 + COLORS.wallGold[1] * 0.32;
+        b = b * 0.68 + COLORS.wallGold[2] * 0.32;
+      }
+      if (this.cells[index]) {
+        const age = this.ages[index];
         if (this.collision[index]) {
-          ctx.fillStyle = this.collision[index] > 6 ? "rgba(242, 112, 80, 0.72)" : "rgba(225, 184, 77, 0.42)";
-          ctx.fillRect(px, py, s, s);
-        } else if (this.wall[index]) {
-          ctx.globalAlpha = 0.34;
-          ctx.fillStyle = frontVacuum?.color || "#e1b84d";
-          ctx.fillRect(px, py, s, s);
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = "rgba(225, 184, 77, 0.32)";
-          ctx.fillRect(px, py, s, s);
-        }
-        if (this.cells[index]) {
-          const age = this.ages[index];
-          if (this.collision[index]) {
-            ctx.fillStyle = age > 18 ? "#ff8c5a" : "#fff0b0";
-          } else if (vacuum) {
-            ctx.fillStyle = age > 18 ? vacuum.color : "#f1d06b";
-          } else {
-            ctx.fillStyle = age > 18 ? this.parentMode.color : "#f3f0e8";
-          }
-          ctx.fillRect(px + 0.6, py + 0.6, Math.max(1, s - 1.2), Math.max(1, s - 1.2));
+          const color = age > 18 ? COLORS.oldCollision : COLORS.youngCollision;
+          r = color[0];
+          g = color[1];
+          b = color[2];
+        } else if (vacuum) {
+          const color = age > 18 ? this.getColor(vacuum.color) : COLORS.youngTrue;
+          r = color[0];
+          g = color[1];
+          b = color[2];
+        } else {
+          const color = age > 18 ? this.getColor(this.parentMode.color) : COLORS.youngFalse;
+          r = color[0];
+          g = color[1];
+          b = color[2];
         }
       }
+
+      data[offset] = r;
+      data[offset + 1] = g;
+      data[offset + 2] = b;
+      data[offset + 3] = 255;
     }
+
+    this.bufferCtx.putImageData(this.pixelData, 0, 0);
+    this.ctx.clearRect(0, 0, this.viewWidth, this.viewHeight);
+    this.ctx.drawImage(this.bufferCanvas, 0, 0, this.cols, this.rows, 0, 0, this.viewWidth, this.viewHeight);
+    this.needsDraw = false;
   }
 
   updateUi() {
@@ -740,24 +802,42 @@ window.addEventListener("keydown", (event) => {
 
 let lastTime = performance.now();
 let accumulator = 0;
-const stepMs = 72;
+let lastUiUpdate = 0;
 
 function frame(now) {
+  if (document.hidden) {
+    lastTime = now;
+    requestAnimationFrame(frame);
+    return;
+  }
+
   const elapsed = Math.min(160, now - lastTime);
   lastTime = now;
   accumulator += elapsed;
+  let stepped = false;
 
   if (universe.playing) {
-    while (accumulator >= stepMs) {
+    let steps = 0;
+    while (accumulator >= TARGET_STEP_MS && steps < MAX_STEPS_PER_FRAME) {
       universe.step();
-      accumulator -= stepMs;
+      accumulator -= TARGET_STEP_MS;
+      steps += 1;
+      stepped = true;
+    }
+    if (steps === MAX_STEPS_PER_FRAME && accumulator >= TARGET_STEP_MS) {
+      accumulator = TARGET_STEP_MS;
     }
   } else {
     accumulator = 0;
   }
 
-  universe.updateUi();
-  universe.draw();
+  if (stepped && now - lastUiUpdate >= UI_UPDATE_MS) {
+    universe.updateUi();
+    lastUiUpdate = now;
+  }
+  if (universe.needsDraw) {
+    universe.draw();
+  }
   requestAnimationFrame(frame);
 }
 
