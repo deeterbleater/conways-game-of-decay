@@ -81,6 +81,7 @@ const els = {
   randomize: document.querySelector("#randomize"),
   clear: document.querySelector("#clear"),
   baselineMode: document.querySelector("#baselineMode"),
+  finiteDomains: document.querySelector("#finiteDomains"),
   wallSpeed: document.querySelector("#wallSpeed"),
   wallTension: document.querySelector("#wallTension"),
   wallRadiation: document.querySelector("#wallRadiation"),
@@ -169,6 +170,13 @@ function spawnBudgetFor(generation, radiation, tension, random) {
     return energy > 1.05 ? 1 : 0;
   }
   return energy > 1.38 ? 1 : 0;
+}
+
+function domainRadiusFor(generation, speed, tension, radiation, random) {
+  const energy = speed * 6 + radiation * 34 + (1 - tension) * 20;
+  const ancestryDamp = Math.pow(0.82, generation);
+  const jitter = 0.76 + random() * 0.42;
+  return clamp((16 + energy) * ancestryDamp * jitter, 10, 76);
 }
 
 function digitsFromMask(mask) {
@@ -622,6 +630,7 @@ class Universe {
       parentVacuumId: options.parentVacuumId || 0,
       parentNodeId,
       nodeId,
+      maxRadius: options.maxRadius ?? domainRadiusFor(generation, speed, tension, radiation, this.random),
       spawnBudget: options.spawnBudget ?? spawnBudgetFor(generation, radiation, tension, this.random),
       spawnCount: 0,
       nextSpawn: nextSpawnTick(this.tick, generation, this.random)
@@ -680,18 +689,26 @@ class Universe {
     }
     const farEdge = Math.hypot(this.cols, this.rows) + 18;
     const descendants = [];
+    const finiteDomains = els.finiteDomains.checked;
 
     for (const bubble of this.bubbles) {
       const speed = bubble.speed;
       const tension = bubble.tension;
       const wrinkle = (1 - tension) * 9;
       const frontWidth = Math.max(1.4, speed + 1.4);
-      bubble.radius += speed;
+      const domainLimit = finiteDomains ? bubble.maxRadius : farEdge;
+      const remainingRadius = domainLimit - bubble.radius;
+      const wallSpeed = finiteDomains
+        ? clamp(speed * clamp(remainingRadius / 14, 0.12, 1), 0, speed)
+        : speed;
+      bubble.radius += wallSpeed;
       bubble.phase += 0.045 + speed * 0.012;
       const maxReach = bubble.radius + wrinkle + 2;
       const maxReachSq = maxReach * maxReach;
+      const activeFront = !finiteDomains || remainingRadius > 0.35;
 
       if (
+        activeFront &&
         bubble.generation < MAX_GENERATION &&
         bubble.spawnCount < bubble.spawnBudget &&
         bubble.radius > 9 &&
@@ -721,6 +738,10 @@ class Universe {
           bubble.spawnCount += 1;
         }
         bubble.nextSpawn = nextSpawnTick(this.tick, bubble.generation, this.random);
+      }
+
+      if (!activeFront) {
+        continue;
       }
 
       const minX = Math.max(0, Math.floor(bubble.x - bubble.radius - wrinkle - 3));
@@ -775,7 +796,10 @@ class Universe {
       });
     }
 
-    this.bubbles = this.bubbles.filter((bubble) => bubble.radius < farEdge);
+    this.bubbles = this.bubbles.filter((bubble) => {
+      const limit = els.finiteDomains.checked ? bubble.maxRadius : farEdge;
+      return bubble.radius < limit - 0.35;
+    });
   }
 
   step(countTick = true) {
@@ -1034,6 +1058,8 @@ window.falseVacuumGarden = {
       converted: universe.convertedCount,
       collisionCount: universe.collisionCount,
       maxGeneration: universe.maxGeneration,
+      activeBubbles: universe.bubbles.length,
+      finiteDomains: els.finiteDomains.checked,
       substrateNodes: universe.substrateNodes.length,
       loopCount: universe.loopCount,
       rootNodeId: universe.rootNodeId,

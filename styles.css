@@ -144,7 +144,8 @@ button.primary {
 }
 
 .field,
-.range-field {
+.range-field,
+.toggle-field {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -152,6 +153,7 @@ button.primary {
 
 .field span,
 .range-field span,
+.toggle-field span,
 .metrics span {
   color: var(--muted);
   font-size: 12px;
@@ -206,6 +208,24 @@ select {
 .range-field output {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+.toggle-field {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+}
+
+.toggle-field input {
+  width: 42px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
 }
 
 .metrics {
