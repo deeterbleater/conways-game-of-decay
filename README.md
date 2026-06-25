@@ -1,4 +1,4 @@
-# Coway's Game of Decay
+# Conway's Game of Decay
 
 A recursive cellular automaton about false vacuum decay.
 
