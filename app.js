@@ -81,6 +81,8 @@ const els = {
   randomize: document.querySelector("#randomize"),
   clear: document.querySelector("#clear"),
   fullscreen: document.querySelector("#fullscreen"),
+  toggleControls: document.querySelector("#toggleControls"),
+  showControls: document.querySelector("#showControls"),
   baselineMode: document.querySelector("#baselineMode"),
   domainMode: document.querySelector("#domainMode"),
   simSpeed: document.querySelector("#simSpeed"),
@@ -1144,6 +1146,11 @@ function syncFullscreenButton() {
   const shell = document.querySelector(".app-shell");
   const active = document.fullscreenElement || shell.classList.contains("fullscreen-fallback");
   els.fullscreen.textContent = active ? "Exit full" : "Fullscreen";
+  els.toggleControls.disabled = !active;
+  if (!active) {
+    shell.classList.remove("controls-hidden");
+  }
+  els.toggleControls.textContent = shell.classList.contains("controls-hidden") ? "Show controls" : "Hide controls";
 }
 
 async function toggleFullscreen() {
@@ -1162,11 +1169,27 @@ async function toggleFullscreen() {
   }
 
   if (document.fullscreenEnabled) {
-    await shell.requestFullscreen();
-    if (document.fullscreenElement) return;
+    try {
+      await Promise.race([
+        shell.requestFullscreen(),
+        new Promise((resolve) => window.setTimeout(resolve, 450))
+      ]);
+      if (document.fullscreenElement) return;
+    } catch {
+      // Fall through to the in-page fullscreen style.
+    }
   }
 
   shell.classList.add("fullscreen-fallback");
+  syncFullscreenButton();
+  universe.resize();
+  universe.draw();
+}
+
+function setControlsHidden(hidden) {
+  const shell = document.querySelector(".app-shell");
+  const fullscreenActive = document.fullscreenElement || shell.classList.contains("fullscreen-fallback");
+  shell.classList.toggle("controls-hidden", Boolean(hidden && fullscreenActive));
   syncFullscreenButton();
   universe.resize();
   universe.draw();
@@ -1189,6 +1212,11 @@ els.fullscreen.addEventListener("click", () => {
     syncFullscreenButton();
   });
 });
+els.toggleControls.addEventListener("click", () => {
+  const shell = document.querySelector(".app-shell");
+  setControlsHidden(!shell.classList.contains("controls-hidden"));
+});
+els.showControls.addEventListener("click", () => setControlsHidden(false));
 document.addEventListener("fullscreenchange", () => {
   document.querySelector(".app-shell").classList.remove("fullscreen-fallback");
   syncFullscreenButton();
