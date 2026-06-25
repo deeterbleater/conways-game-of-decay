@@ -435,9 +435,16 @@ class Universe {
     const inheritedSpeed = options.parentSpeed || Number(els.wallSpeed.value);
     const inheritedTension = options.parentTension ?? Number(els.wallTension.value);
     const inheritedRadiation = options.parentRadiation ?? Number(els.wallRadiation.value);
-    const speed = clamp((options.speed ?? inheritedSpeed) * (0.72 + this.random() * 0.72), 0.35, 2.9);
-    const tension = clamp((options.tension ?? inheritedTension) + (this.random() - 0.5) * 0.52, 0, 1);
-    const radiation = clamp((options.radiation ?? inheritedRadiation) + (this.random() - 0.5) * 0.34, 0.02, 0.92);
+    const exactParameters = options.exactParameters === true;
+    const speed = exactParameters
+      ? clamp(options.speed ?? inheritedSpeed, 0.35, 2.9)
+      : clamp((options.speed ?? inheritedSpeed) * (0.72 + this.random() * 0.72), 0.35, 2.9);
+    const tension = exactParameters
+      ? clamp(options.tension ?? inheritedTension, 0, 1)
+      : clamp((options.tension ?? inheritedTension) + (this.random() - 0.5) * 0.52, 0, 1);
+    const radiation = exactParameters
+      ? clamp(options.radiation ?? inheritedRadiation, 0.02, 0.92)
+      : clamp((options.radiation ?? inheritedRadiation) + (this.random() - 0.5) * 0.34, 0.02, 0.92);
     const vacuumId = this.vacua.length;
     const vacuum = {
       id: vacuumId,
@@ -491,17 +498,17 @@ class Universe {
 
   addBubble(gridX, gridY) {
     const parentNodeId = this.nodeAt(gridX, gridY);
-    const parentMode = randomDifferentItem(BASELINES, this.random, this.parentMode.id);
-    this.parentMode = parentMode;
-    this.parentRule = parseRule(parentMode.rule);
-    this.rootNodeId = this.resolveSubstrateNode(this.rootNodeId, parentMode);
-    els.baselineMode.value = parentMode.id;
+    const mode = getMode(DAUGHTERS, els.daughterMode.value);
 
     this.spawnBubble(gridX, gridY, {
       generation: 0,
       parentNodeId,
-      mode: this.selectChildMode(parentNodeId, this.childMode.id),
-      updateControls: true
+      mode,
+      speed: Number(els.wallSpeed.value),
+      tension: Number(els.wallTension.value),
+      radiation: Number(els.wallRadiation.value),
+      exactParameters: true,
+      updateControls: false
     });
   }
 
